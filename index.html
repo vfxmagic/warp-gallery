@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>VFXMAGIC — Warp Gallery</title>
+<meta name="description" content="VFXMAGIC signature hero — a scroll-warping 3D image gallery (Three.js + GSAP)." />
+<style>
+  :root{
+    --bg:#07080b;
+    --ink:#f4f1ea;
+    --muted:#8a8d96;
+    --green:#9be870;          /* the VFXMAGIC green-A accent */
+    --line:rgba(244,241,234,.14);
+    --font: "Helvetica Neue", Inter, system-ui, -apple-system, Arial, sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    cursor:none;
+  }
+  canvas{display:block}
+  #gl{position:fixed;inset:0;z-index:1}
+
+  /* ---------- chrome over the canvas ---------- */
+  .chrome{position:fixed;inset:0;z-index:5;pointer-events:none}
+  .chrome a,.chrome button{pointer-events:auto}
+
+  header.bar{
+    position:fixed;top:0;left:0;right:0;z-index:6;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:26px 34px;
+    mix-blend-mode:difference;     /* the "difference" trick from site #3 — texture, not a 2nd showpiece */
+  }
+  header.bar .logo{display:flex;align-items:center;gap:14px;text-decoration:none}
+  header.bar .logo img{height:18px;width:auto;display:block;filter:brightness(1.7)}
+  header.bar nav{display:flex;gap:30px}
+  header.bar nav a,
+  header.bar .menu{
+    color:var(--ink);text-decoration:none;
+    font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    font-weight:500;background:none;border:0;font-family:inherit;
+  }
+  header.bar nav a{opacity:.78;transition:opacity .3s}
+  header.bar nav a:hover{opacity:1}
+
+  /* kicker top-left under logo */
+  .kicker{
+    position:fixed;left:34px;top:64px;z-index:6;
+    font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);
+  }
+
+  /* big editorial title, bottom-left */
+  .hero-title{
+    position:fixed;left:30px;bottom:30px;z-index:6;
+    line-height:.86;font-weight:700;letter-spacing:-.02em;
+    font-size:clamp(46px,10vw,150px);
+    text-transform:uppercase;
+    mix-blend-mode:difference;
+  }
+  .hero-title .ln{display:block;overflow:hidden}
+  .hero-title .ln > span{display:block;transform:translateY(110%)}
+
+  /* index + caption, bottom-right */
+  .meta{
+    position:fixed;right:34px;bottom:32px;z-index:6;text-align:right;
+  }
+  .meta .cap{
+    font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink);
+    min-height:16px;transition:opacity .25s;
+  }
+  .meta .idx{font-size:10.5px;letter-spacing:.2em;color:var(--muted);margin-top:10px}
+  .meta .idx b{color:var(--ink);font-weight:600}
+
+  /* layout toggle, top-right-ish under nav */
+  .modes{
+    position:fixed;right:34px;top:64px;z-index:6;
+    display:flex;gap:4px;align-items:center;
+  }
+  .modes button{
+    font-family:inherit;font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--muted);background:none;border:0;padding:6px 8px;position:relative;transition:color .3s;
+  }
+  .modes button.on{color:var(--ink)}
+  .modes button.on::after{
+    content:"";position:absolute;left:8px;right:8px;bottom:2px;height:1px;background:var(--green);
+  }
+  .modes .sep{width:1px;height:11px;background:var(--line)}
+
+  /* scroll hint, bottom-center */
+  .hint{
+    position:fixed;left:50%;bottom:30px;transform:translateX(-50%);z-index:6;
+    font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:10px;
+  }
+  .hint .dash{width:34px;height:1px;background:var(--line);position:relative;overflow:hidden}
+  .hint .dash::after{content:"";position:absolute;inset:0;background:var(--green);
+    transform:translateX(-100%);animation:sweep 2.6s infinite}
+  @keyframes sweep{0%{transform:translateX(-100%)}50%{transform:translateX(0)}100%{transform:translateX(100%)}}
+
+  /* ---------- custom cursor ---------- */
+  .cursor{position:fixed;top:0;left:0;z-index:50;pointer-events:none;mix-blend-mode:difference}
+  .cur-dot{position:fixed;width:7px;height:7px;border-radius:50%;background:var(--ink);
+    transform:translate(-50%,-50%);transition:width .25s,height .25s,background .25s}
+  .cur-ring{position:fixed;width:34px;height:34px;border:1px solid rgba(244,241,234,.5);border-radius:50%;
+    transform:translate(-50%,-50%);transition:transform .2s ease,opacity .3s;display:grid;place-items:center}
+  .cur-ring span{font-size:8px;letter-spacing:.18em;text-transform:uppercase;opacity:0;transition:opacity .25s}
+  body.hovering .cur-ring{width:74px;height:74px;border-color:transparent}
+  body.hovering .cur-ring span{opacity:1}
+  body.hovering .cur-dot{width:0;height:0}
+  body.dragging .cur-ring{transform:translate(-50%,-50%) scale(.7)}
+
+  /* ---------- loader ---------- */
+  #loader{position:fixed;inset:0;z-index:80;background:var(--bg);display:grid;place-items:center}
+  #loader .lwrap{display:flex;flex-direction:column;align-items:center;gap:22px}
+  #loader img{height:24px;filter:brightness(1.7);opacity:0}
+  #loader .lbar{width:180px;height:1px;background:var(--line);position:relative;overflow:hidden}
+  #loader .lbar i{position:absolute;inset:0;transform-origin:left;transform:scaleX(0);background:var(--green)}
+  #loader .lnum{font-size:10px;letter-spacing:.24em;color:var(--muted)}
+
+  .corner{position:fixed;z-index:6;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .corner.tr{display:none}
+
+  /* ---------- lightbox (click a frame to enlarge) ---------- */
+  #lightbox{
+    position:fixed;inset:0;z-index:70;display:none;place-items:center;
+    background:rgba(5,6,9,.86);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    opacity:0;transition:opacity .38s ease;padding:6vmin;
+  }
+  #lightbox.show{opacity:1}
+  body.lb-open{cursor:auto}
+  body.lb-open .cursor{display:none}
+  .lb-fig{margin:0;display:flex;flex-direction:column;align-items:center;gap:18px;
+    transform:scale(.94);transition:transform .45s cubic-bezier(.16,1,.3,1)}
+  #lightbox.show .lb-fig{transform:scale(1)}
+  .lb-fig img{max-width:88vw;max-height:80vh;width:auto;height:auto;display:block;
+    box-shadow:0 40px 120px rgba(0,0,0,.6);border-radius:2px}
+  .lb-cap{display:flex;align-items:baseline;gap:16px;width:100%;justify-content:space-between;
+    font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink)}
+  .lb-cap b{color:var(--muted);font-weight:500;letter-spacing:.2em}
+  .lb-close{position:fixed;top:24px;right:30px;z-index:72;background:none;border:0;cursor:pointer;
+    color:var(--ink);font-size:30px;line-height:1;width:44px;height:44px;border-radius:50%;
+    transition:background .25s;font-family:inherit}
+  .lb-close:hover{background:rgba(244,241,234,.1)}
+
+  @media (max-width:760px){
+    header.bar{padding:18px 20px}
+    header.bar nav{display:none}
+    .kicker{display:none}
+    .modes{top:54px;right:20px}
+    .hero-title{left:18px;bottom:74px}
+    .meta{right:20px;bottom:20px}
+    .hint{display:none}
+    body{cursor:auto}.cursor{display:none}
+  }
+</style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+
+  <div class="chrome">
+    <header class="bar">
+      <a class="logo" href="https://vfxmagic.com.au" aria-label="VFXMAGIC home">
+        <img id="logo" alt="VFXMAGIC" />
+      </a>
+      <nav>
+        <a href="#">Work</a>
+        <a href="#">Studio</a>
+        <a href="#">Reel</a>
+        <a href="#">Contact</a>
+      </nav>
+    </header>
+
+    <div class="kicker">Selected Work — Vol. 01</div>
+
+    <div class="modes" role="group" aria-label="Layout">
+      <button id="m-gallery" class="on">Gallery</button>
+      <span class="sep"></span>
+      <button id="m-spiral">Reel</button>
+    </div>
+
+    <h1 class="hero-title" id="title"></h1>
+
+    <div class="meta">
+      <div class="cap" id="cap">Drag · Scroll</div>
+      <div class="idx"><b id="idxCur">01</b> / <span id="idxTot">10</span></div>
+    </div>
+
+    <div class="hint"><span class="dash"></span>Scroll to warp</div>
+  </div>
+
+  <!-- custom cursor -->
+  <div class="cursor" aria-hidden="true">
+    <div class="cur-ring" id="curRing"><span>View</span></div>
+    <div class="cur-dot" id="curDot"></div>
+  </div>
+
+  <!-- lightbox (click a frame to enlarge) -->
+  <div id="lightbox" aria-hidden="true">
+    <button class="lb-close" id="lbClose" aria-label="Close">&times;</button>
+    <figure class="lb-fig">
+      <img id="lbImg" alt="" />
+      <figcaption class="lb-cap"><span id="lbTitle"></span><b id="lbIdx"></b></figcaption>
+    </figure>
+  </div>
+
+  <!-- loader -->
+  <div id="loader">
+    <div class="lwrap">
+      <img id="llogo" alt="VFXMAGIC" />
+      <div class="lbar"><i id="lbar"></i></div>
+      <div class="lnum"><span id="lnum">0</span>%</div>
+    </div>
+  </div>
+
+<script src="./vendor/gsap.min.js"></script>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   VFXMAGIC — Warp Gallery
+   The signature hero: a horizontal image strip that physically
+   BENDS with scroll velocity (Example 4 from the Fable 5 video),
+   morphing to a 3D spiral. Black-and-white → colour on hover,
+   custom cursor, list⇄spiral toggle.
+
+   >>> SWAP THE PLACEHOLDERS FOR REAL SHOTS <<<
+   Edit PLATES below: give each plate { src:'path/to/shot.jpg',
+   title:'PROJECT NAME' }. Drop real VFXMAGIC stills/plates in
+   this folder (or any URL). If a src is missing or fails to
+   load, a labelled placeholder is generated so the layout
+   always works.
+   ============================================================ */
+
+const LOGO = "data:image/png;base64,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";
+
+document.getElementById('logo').src = LOGO;
+document.getElementById('llogo').src = LOGO;
+
+/* ---------- the gallery content (EDIT THIS) ---------- */
+// Real VFXMAGIC stills pulled from the studio's "Our Work" gallery (vfxmagic.com.au).
+// Frame 01 is the Testament project banner; the rest are the studio reel (Testament / The Chosen).
+const PLATES = [
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-01.webp' },
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-02.webp' },
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-03.webp' },
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-04.webp' },
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-05.webp' },
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-06.webp' },
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-07.webp' },
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-08.webp' },
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-09.webp' },
+  { title:'TESTAMENT', src:'plates/vfxmagic-still-10.webp' },
+];
+const N = PLATES.length;
+document.getElementById('idxTot').textContent = String(N).padStart(2,'0');
+
+/* ---------- procedural placeholder texture (always works) ---------- */
+function placeholderTexture(i, title){
+  const w=1600, h=900;          // 16:9 — matches the real film frames
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const x=c.getContext('2d');
+  // moody hue per slot — bright enough to read as an image, desaturates to B&W by default
+  const hue=(i*37)%360;
+  const g=x.createLinearGradient(0,0,w,h);
+  g.addColorStop(0,`hsl(${hue},48%,58%)`);
+  g.addColorStop(.55,`hsl(${(hue+24)%360},44%,38%)`);
+  g.addColorStop(1,`hsl(${(hue+40)%360},36%,20%)`);
+  x.fillStyle=g; x.fillRect(0,0,w,h);
+  // soft radial light
+  const r=x.createRadialGradient(w*0.5,h*0.4,40,w*0.5,h*0.45,w*0.6);
+  r.addColorStop(0,'rgba(255,255,255,.26)'); r.addColorStop(1,'rgba(255,255,255,0)');
+  x.fillStyle=r; x.fillRect(0,0,w,h);
+  // grain
+  for(let k=0;k<14000;k++){
+    x.fillStyle=`rgba(255,255,255,${Math.random()*0.05})`;
+    x.fillRect(Math.random()*w, Math.random()*h, 1, 1);
+  }
+  // vignette
+  const v=x.createRadialGradient(w/2,h/2,h*0.35,w/2,h/2,w*0.62);
+  v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,.55)');
+  x.fillStyle=v; x.fillRect(0,0,w,h);
+  // index + title + label
+  x.fillStyle='rgba(244,241,234,.92)';
+  x.font='800 150px "Helvetica Neue", Arial';
+  x.fillText(String(i+1).padStart(2,'0'), 56, 170);
+  x.font='700 64px "Helvetica Neue", Arial';
+  x.fillText(title, 56, h-120);
+  x.fillStyle='rgba(155,232,112,.95)';
+  x.font='600 26px "Helvetica Neue", Arial';
+  x.fillText('VFXMAGIC · PLACEHOLDER PLATE', 56, h-72);
+  const t=new THREE.CanvasTexture(c);
+  t.colorSpace=THREE.SRGBColorSpace;
+  t.userData={w,h};
+  return t;
+}
+
+/* ============================================================
+   THREE setup
+   ============================================================ */
+const canvas=document.getElementById('gl');
+const renderer=new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(42, innerWidth/innerHeight, .1, 100);
+camera.position.set(0,0,11.0);
+
+const PW=4.8, PH=2.7;          // plane size — 16:9 film frame
+const SPACING=6.0;             // horizontal (Gallery) strip spacing
+const TOTAL=N*SPACING;
+const isMobile=innerWidth<760;
+// vertical film-reel (unravel) layout constants
+const REEL_GAP=1.0,     // ribbon spacing per frame
+      REEL_RISE=3.15,   // vertical world units between frames (≈ frame height → film strip)
+      REEL_R=3.25,      // coil radius (side-swing + depth) — bigger = more obvious swirl
+      REEL_TWIST=1.12,  // radians of coil per frame (the swirl rate)
+      REEL_FACE=0.72,   // how much each frame turns to follow the coil
+      REEL_TILT=0.06,   // slight unspool tilt
+      REEL_SCROLL=0.62; // scroll → vertical travel gain
+
+const geo=new THREE.PlaneGeometry(PW,PH,48,2);
+
+const vert=`
+  uniform float uVelo;     // signed scroll velocity
+  uniform float uArc;      // permanent gentle convex
+  varying vec2 vUv;
+  void main(){
+    vUv=uv;
+    vec3 p=position;
+    float ax=(uv.x-0.5);
+    // velocity-driven curl around the vertical axis (the warp)
+    p.z += sin(uv.x*3.14159265) * uVelo * 2.6;
+    // small permanent arc so a still strip already feels 3D
+    p.z -= ax*ax * uArc;
+    gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
+  }
+`;
+const frag=`
+  precision highp float;
+  uniform sampler2D uTex;
+  uniform vec2  uTexSize;
+  uniform vec2  uQuad;
+  uniform float uHover;    // 0 grayscale .. 1 colour
+  uniform float uOpacity;
+  varying vec2 vUv;
+  vec2 cover(vec2 uv){
+    vec2 r=vec2(
+      min((uQuad.x/uQuad.y)/(uTexSize.x/uTexSize.y),1.0),
+      min((uQuad.y/uQuad.x)/(uTexSize.y/uTexSize.x),1.0)
+    );
+    return vec2(uv.x*r.x+(1.0-r.x)*.5, uv.y*r.y+(1.0-r.y)*.5);
+  }
+  void main(){
+    vec2 uv=cover(vUv);
+    vec3 tex=texture2D(uTex,uv).rgb;
+    float g=dot(tex,vec3(.299,.587,.114));
+    vec3 col=mix(vec3(g), tex, uHover);        // B&W -> colour on hover
+    col += uHover*0.05;                         // tiny lift when active
+    // edge darken
+    float ex=smoothstep(0.0,0.04,vUv.x)*smoothstep(1.0,0.96,vUv.x);
+    float ey=smoothstep(0.0,0.03,vUv.y)*smoothstep(1.0,0.97,vUv.y);
+    col*=mix(0.82,1.0,ex*ey);
+    gl_FragColor=vec4(col, uOpacity);
+  }
+`;
+
+const group=new THREE.Group();
+scene.add(group);
+const items=[];
+
+for(let i=0;i<N;i++){
+  const tex=placeholderTexture(i, PLATES[i].title);
+  const mat=new THREE.ShaderMaterial({
+    uniforms:{
+      uTex:{value:tex},
+      uTexSize:{value:new THREE.Vector2(tex.userData.w,tex.userData.h)},
+      uQuad:{value:new THREE.Vector2(PW,PH)},
+      uVelo:{value:0},
+      uArc:{value:0.9},
+      uHover:{value:0},
+      uOpacity:{value:0},
+    },
+    vertexShader:vert, fragmentShader:frag, transparent:true,
+  });
+  const mesh=new THREE.Mesh(geo,mat);
+  mesh.userData={i, hover:0, hoverTarget:0, title:PLATES[i].title};
+  group.add(mesh);
+  items.push(mesh);
+
+  // try to load a real plate; swap in on success
+  if(PLATES[i].src){
+    new THREE.TextureLoader().load(PLATES[i].src, (t)=>{
+      t.colorSpace=THREE.SRGBColorSpace;
+      mat.uniforms.uTex.value=t;
+      mat.uniforms.uTexSize.value.set(t.image.width, t.image.height);
+    }, undefined, ()=>{ /* keep placeholder */ });
+  }
+}
+
+/* ---------- layout: morph between the horizontal Gallery strip
+   and the vertical Reel (a film strip unravelling / swirling up
+   a coiled axis) ---------- */
+let morph=0;                 // 0 = gallery strip, 1 = reel
+let morphTarget=0;
+const REEL_SPAN=N*REEL_GAP;
+
+function layout(scroll){
+  for(const m of items){
+    const i=m.userData.i;
+
+    // ---- GALLERY: horizontal strip (scroll moves sideways) ----
+    let sx = ((i*SPACING - scroll) % TOTAL + TOTAL) % TOTAL - TOTAL/2;
+    let sy = 0;
+    let sz = -Math.abs(sx)*0.12;            // arc the row back at the edges
+    let sry = -sx*0.04;                     // turn to face centre
+    const stripEdge = 1.0 - smooth01((Math.abs(sx)-TOTAL/2+SPACING*1.4)/(SPACING*1.2));
+
+    // ---- REEL: vertical film-strip unravelling around a coiled axis ----
+    // t = where this frame sits along the ribbon (recycles → endless reel)
+    let t = ((i*REEL_GAP - scroll*REEL_SCROLL) % REEL_SPAN + REEL_SPAN) % REEL_SPAN - REEL_SPAN/2;
+    const coil = t * REEL_TWIST;            // the swirl angle at this point on the strip
+    let rx = Math.sin(coil) * REEL_R;       // swing left/right as it coils
+    let rz = (Math.cos(coil) - 1) * REEL_R; // wrap toward / away from camera
+    let ry = -t * REEL_RISE;                // VERTICAL travel — the up-and-down unravel
+    let rry = coil * REEL_FACE;             // frames turn to follow the coil
+    let rrx = -t * REEL_TILT;               // slight unspool tilt
+    let rrz = Math.sin(coil) * 0.10;        // tiny roll for the ribbon feel
+    const reelEdge = 1.0 - smooth01((Math.abs(t)-(REEL_SPAN/2-REEL_GAP*1.6))/(REEL_GAP*1.3));
+
+    // ---- morph between the two ----
+    m.position.x = sx + (rx-sx)*morph;
+    m.position.y = sy + (ry-sy)*morph;
+    m.position.z = sz + (rz-sz)*morph;
+    m.rotation.x = (rrx)*morph;
+    m.rotation.y = sry + (rry-sry)*morph;
+    m.rotation.z = (rrz)*morph;
+
+    m._edge = THREE.MathUtils.clamp(stripEdge*(1-morph) + reelEdge*morph, 0, 1);
+  }
+}
+function smooth01(x){ x=THREE.MathUtils.clamp(x,0,1); return x*x*(3-2*x); }
+
+/* ============================================================
+   scroll + velocity
+   ============================================================ */
+let target=0, current=0, prev=0, velo=0;
+function onWheel(e){ target += e.deltaY*0.006; }
+addEventListener('wheel', onWheel, {passive:true});
+
+// drag (pointer) + touch — plus tap-to-enlarge detection
+let dragging=false, lastX=0, moved=0;
+function down(x){ if(lbOpen) return; dragging=true; lastX=x; moved=0; document.body.classList.add('dragging'); }
+function move(x){ if(!dragging) return; const dx=x-lastX; target -= dx*0.02; moved+=Math.abs(dx); lastX=x; }
+function up(x,e){
+  if(!dragging) return;
+  dragging=false; document.body.classList.remove('dragging');
+  // a tap (little movement) on a frame opens the lightbox
+  if(moved<6 && !lbOpen && e && e.target===canvas) tryOpenAt(x, e._y);
+}
+addEventListener('pointerdown', e=>down(e.clientX));
+addEventListener('pointermove',  e=>move(e.clientX));
+addEventListener('pointerup', e=>{ e._y=e.clientY; up(e.clientX, e); });
+addEventListener('pointercancel', ()=>{ dragging=false; document.body.classList.remove('dragging'); });
+addEventListener('touchstart', e=>down(e.touches[0].clientX), {passive:true});
+addEventListener('touchmove',  e=>move(e.touches[0].clientX), {passive:true});
+addEventListener('touchend', e=>{ const t=e.changedTouches[0]; up(t.clientX, {target:canvas, _y:t.clientY}); });
+
+/* ---------- raycast hover ---------- */
+const ray=new THREE.Raycaster();
+const pointer=new THREE.Vector2(-2,-2);
+let hovered=null;
+addEventListener('pointermove', e=>{
+  pointer.x=(e.clientX/innerWidth)*2-1;
+  pointer.y=-(e.clientY/innerHeight)*2+1;
+  cursor.tx=e.clientX; cursor.ty=e.clientY;
+});
+
+const capEl=document.getElementById('cap');
+const idxEl=document.getElementById('idxCur');
+
+/* ---------- lightbox: click a frame to enlarge ---------- */
+const lb=document.getElementById('lightbox');
+const lbImg=document.getElementById('lbImg');
+const lbTitle=document.getElementById('lbTitle');
+const lbIdx=document.getElementById('lbIdx');
+const lbClose=document.getElementById('lbClose');
+let lbOpen=false;
+const _ndc=new THREE.Vector2();
+
+function tryOpenAt(x,y){
+  _ndc.x=(x/innerWidth)*2-1; _ndc.y=-(y/innerHeight)*2+1;
+  ray.setFromCamera(_ndc,camera);
+  const hit=ray.intersectObjects(items,false)[0];
+  if(hit) openLightbox(hit.object);
+}
+function openLightbox(mesh){
+  const i=mesh.userData.i;
+  let src=PLATES[i].src;
+  if(!src){ const img=mesh.material.uniforms.uTex.value.image; if(img&&img.toDataURL) src=img.toDataURL(); }
+  lbImg.src=src||''; lbImg.alt=mesh.userData.title;
+  lbTitle.textContent=mesh.userData.title;
+  lbIdx.textContent=String(i+1).padStart(2,'0')+' / '+String(N).padStart(2,'0');
+  lbOpen=true; document.body.classList.add('lb-open');
+  lb.style.display='grid';
+  void lb.offsetHeight;          // force reflow so the fade runs even if rAF is throttled
+  lb.classList.add('show');
+}
+function closeLightbox(){
+  lbOpen=false; lb.classList.remove('show'); document.body.classList.remove('lb-open');
+  setTimeout(()=>{ if(!lbOpen){ lb.style.display='none'; lbImg.src=''; } }, 400);
+}
+lbClose.addEventListener('click', closeLightbox);
+lb.addEventListener('click', e=>{ if(e.target===lb) closeLightbox(); });   // click backdrop to close
+addEventListener('keydown', e=>{ if(e.key==='Escape'&&lbOpen) closeLightbox(); });
+
+/* ---------- custom cursor ---------- */
+const curDot=document.getElementById('curDot'), curRing=document.getElementById('curRing');
+const cursor={x:innerWidth/2,y:innerHeight/2,tx:innerWidth/2,ty:innerHeight/2};
+
+/* ============================================================
+   render loop
+   ============================================================ */
+let started=false;
+function tick(){
+  requestAnimationFrame(tick);
+
+  // smooth scroll + velocity
+  current += (target-current)*0.08;
+  velo += ((current-prev)-velo)*0.12;
+  prev=current;
+  const veloClamped=THREE.MathUtils.clamp(velo, -1.6, 1.6);
+
+  morph += (morphTarget-morph)*0.07;
+
+  layout(current);
+
+  // hover detection
+  if(started){
+    ray.setFromCamera(pointer, camera);
+    const hit=ray.intersectObjects(items, false)[0];
+    const now = hit ? hit.object : null;
+    if(now!==hovered){
+      hovered=now;
+      document.body.classList.toggle('hovering', !!hovered);
+      if(hovered){
+        capEl.textContent=hovered.userData.title;
+        idxEl.textContent=String(hovered.userData.i+1).padStart(2,'0');
+      } else {
+        capEl.textContent = morphTarget>0.5 ? 'Reel · unravel' : 'Drag · Scroll';
+      }
+    }
+  }
+
+  // per-plane uniforms
+  for(const m of items){
+    m.userData.hoverTarget = (m===hovered)?1:0;
+    m.userData.hover += (m.userData.hoverTarget-m.userData.hover)*0.12;
+    const u=m.material.uniforms;
+    u.uHover.value=m.userData.hover;
+    u.uVelo.value=veloClamped;
+    // edge fade only — planes are always visible; the loader overlay covers them during intro
+    u.uOpacity.value = (m._edge!==undefined?m._edge:1);
+    // a touch of scale on hover
+    const s=1+m.userData.hover*0.04;
+    m.scale.setScalar(s);
+  }
+
+  // cursor follow
+  cursor.x+=(cursor.tx-cursor.x)*0.2; cursor.y+=(cursor.ty-cursor.y)*0.2;
+  curDot.style.transform=`translate(${cursor.x}px,${cursor.y}px) translate(-50%,-50%)`;
+  curRing.style.transform=`translate(${cursor.x}px,${cursor.y}px) translate(-50%,-50%)`;
+  curDot.style.left=curDot.style.top='0px'; curRing.style.left=curRing.style.top='0px';
+
+  renderer.render(scene,camera);
+}
+tick();
+
+/* ============================================================
+   mode toggle
+   ============================================================ */
+const mg=document.getElementById('m-gallery'), ms=document.getElementById('m-spiral');
+function setMode(spiral){
+  morphTarget=spiral?1:0;
+  mg.classList.toggle('on',!spiral); ms.classList.toggle('on',spiral);
+  capEl.textContent = spiral?'Reel · unravel':'Drag · Scroll';
+}
+mg.onclick=()=>setMode(false);
+ms.onclick=()=>setMode(true);
+
+/* ============================================================
+   intro (GSAP) — branded loader, then reveal
+   ============================================================ */
+// split hero title into two reveal lines
+const titleEl=document.getElementById('title');
+['SELECTED', 'WORK'].forEach(word=>{
+  const ln=document.createElement('span'); ln.className='ln';
+  const sp=document.createElement('span'); sp.textContent=word;
+  ln.appendChild(sp); titleEl.appendChild(ln);
+});
+
+// Clear the loader + reveal the page. Uses DIRECT style writes (CSS transitions, real
+// timers) so it ALWAYS completes — even if rAF/GSAP was throttled because the tab was
+// backgrounded during load. Idempotent.
+function forceReady(){
+  if(window.__ready) return; window.__ready=true;
+  started=true;
+  const ld=document.getElementById('loader');
+  ld.style.transition='opacity .5s ease';
+  ld.style.opacity='0';
+  setTimeout(()=>{ ld.style.display='none'; }, 520);
+  document.querySelectorAll('#title .ln > span').forEach(s=>{
+    s.style.transition='transform .9s cubic-bezier(.16,1,.3,1)';
+    s.style.transform='translateY(0)';
+  });
+}
+
+// Pretty path (runs when the tab is visible): animate the branded loader, then reveal.
+window.addEventListener('load', ()=>{
+  gsap.timeline({onComplete:forceReady})
+    .add(()=>{ started=true; })
+    .to('#llogo',{opacity:1,duration:.6,ease:'power2.out'})
+    .to('#lbar',{scaleX:1,duration:1.0,ease:'power2.inOut'},'-=.2')
+    .to({v:0},{v:100,duration:1.0,ease:'power2.inOut',
+      onUpdate:function(){ document.getElementById('lnum').textContent=Math.round(this.targets()[0].v); }},'<');
+});
+
+// Bulletproof fallbacks: a hard timer, and a kick whenever the tab regains focus.
+setTimeout(forceReady, 2800);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) setTimeout(forceReady, 60); });
+
+/* ---------- resize ---------- */
+addEventListener('resize', ()=>{
+  renderer.setSize(innerWidth,innerHeight);
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+});
+</script>
+</body>
+</html>
