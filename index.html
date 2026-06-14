@@ -25,7 +25,19 @@
     cursor:none;
   }
   canvas{display:block}
-  #gl{position:fixed;inset:0;z-index:1}
+
+  /* procedural flythrough background (terrain + sky) behind the frames */
+  #flybg{position:fixed;inset:0;z-index:0;pointer-events:none;background:#05070d;overflow:hidden}
+  #flybg .cvRender{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #flybg .cvWire{display:none}                 /* no cursor lens here */
+  /* a soft dark veil so the foreground frames stay readable over the moving terrain */
+  #flyveil{position:fixed;inset:0;z-index:1;pointer-events:none;
+    background:
+      radial-gradient(135% 105% at 50% 30%, rgba(7,8,11,0) 32%, rgba(7,8,11,.6) 100%),
+      linear-gradient(180deg, rgba(7,8,11,.42) 0%, rgba(7,8,11,.05) 40%, rgba(7,8,11,.55) 100%);}
+  .fx-grain{display:none !important}           /* neutralise the engine's body-grain inject */
+
+  #gl{position:fixed;inset:0;z-index:2}        /* image frames sit above the flythrough + veil */
 
   /* ---------- chrome over the canvas ---------- */
   .chrome{position:fixed;inset:0;z-index:5;pointer-events:none}
@@ -171,6 +183,10 @@
 </style>
 </head>
 <body>
+  <!-- procedural flythrough (terrain + sky) running behind the frames -->
+  <div id="flybg" data-fly aria-hidden="true"></div>
+  <div id="flyveil" aria-hidden="true"></div>
+
   <canvas id="gl"></canvas>
 
   <div class="chrome">
@@ -233,6 +249,7 @@
   </div>
 
 <script src="./vendor/gsap.min.js"></script>
+<script src="./vendor/flythrough.js" defer></script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>

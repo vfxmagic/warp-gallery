@@ -7,6 +7,10 @@ toggled top-right:
 - **Reel** — the frames unspool into a **vertical film strip that swirls up a coiled axis**
   as you scroll (the "let a film reel unravel, vertically" effect).
 
+Behind it all runs the studio's **procedural flythrough** (starfield + wireframe-terrain dolly,
+`vendor/flythrough.js`, mounted on `#flybg` as a non-interactive background); the frames sit in
+the foreground over a soft `#flyveil` darkening gradient that keeps them readable.
+
 Both: black-and-white → colour on hover, custom cursor, velocity warp, 16:9 film frames, and
 **click any frame to enlarge** (full-size lightbox; Esc / × / backdrop closes).
 
