@@ -92,6 +92,15 @@
   }
   .modes .sep{width:1px;height:11px;background:var(--line)}
 
+  /* autoplay toggle (under the mode switch) */
+  .autorow{position:fixed;right:34px;top:92px;z-index:6;display:flex;justify-content:flex-end}
+  .autobtn{display:inline-flex;align-items:center;gap:8px;font-family:inherit;font-size:10px;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--muted);background:none;border:0;
+    padding:6px 0;cursor:pointer;transition:color .3s}
+  .autobtn .adot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:.3s}
+  .autobtn.on{color:var(--ink)}
+  .autobtn.on .adot{background:var(--green);box-shadow:0 0 9px var(--green)}
+
   /* scroll hint, bottom-center */
   .hint{
     position:fixed;left:50%;bottom:30px;transform:translateX(-50%);z-index:6;
@@ -153,6 +162,7 @@
     header.bar nav{display:none}
     .kicker{display:none}
     .modes{top:54px;right:20px}
+    .autorow{top:82px;right:20px}
     .hero-title{left:18px;bottom:74px}
     .meta{right:20px;bottom:20px}
     .hint{display:none}
@@ -179,19 +189,23 @@
     <div class="kicker">Selected Work — Vol. 01</div>
 
     <div class="modes" role="group" aria-label="Layout">
-      <button id="m-gallery" class="on">Gallery</button>
+      <button id="m-gallery">Gallery</button>
       <span class="sep"></span>
-      <button id="m-spiral">Reel</button>
+      <button id="m-spiral" class="on">Reel</button>
+    </div>
+
+    <div class="autorow">
+      <button id="autoBtn" class="autobtn on" aria-pressed="true"><span class="adot"></span>Autoplay</button>
     </div>
 
     <h1 class="hero-title" id="title"></h1>
 
     <div class="meta">
-      <div class="cap" id="cap">Drag · Scroll</div>
+      <div class="cap" id="cap">Auto-rotating</div>
       <div class="idx"><b id="idxCur">01</b> / <span id="idxTot">10</span></div>
     </div>
 
-    <div class="hint"><span class="dash"></span>Scroll to warp</div>
+    <div class="hint"><span class="dash"></span>Hover to control</div>
   </div>
 
   <!-- custom cursor -->
@@ -410,8 +424,8 @@ for(let i=0;i<N;i++){
 /* ---------- layout: morph between the horizontal Gallery strip
    and the vertical Reel (a film strip unravelling / swirling up
    a coiled axis) ---------- */
-let morph=0;                 // 0 = gallery strip, 1 = reel
-let morphTarget=0;
+let morph=1;                 // 0 = gallery strip, 1 = reel (Reel is the default opening view)
+let morphTarget=1;
 const REEL_SPAN=N*REEL_GAP;
 
 function layout(scroll){
@@ -454,13 +468,21 @@ function smooth01(x){ x=THREE.MathUtils.clamp(x,0,1); return x*x*(3-2*x); }
    scroll + velocity
    ============================================================ */
 let target=0, current=0, prev=0, velo=0;
-function onWheel(e){ target += e.deltaY*0.006; }
+// idle auto-rotate: the reel slowly turns through all the frames on its own, but only
+// when the mouse isn't on it and the viewer isn't actively scrolling/dragging.
+let autoEnabled=true, lastInput=-1e9;
+const AUTO_SPEED=0.013, IDLE_MS=1400;
+const introState={off:0};               // intro "spin into place" offset
+function markInput(){ lastInput=performance.now(); }
+function idleCaption(){ return autoEnabled ? 'Auto-rotating' : (morphTarget>0.5?'Reel · unravel':'Drag · Scroll'); }
+
+function onWheel(e){ target += e.deltaY*0.006; markInput(); }
 addEventListener('wheel', onWheel, {passive:true});
 
 // drag (pointer) + touch — plus tap-to-enlarge detection
 let dragging=false, lastX=0, moved=0;
-function down(x){ if(lbOpen) return; dragging=true; lastX=x; moved=0; document.body.classList.add('dragging'); }
-function move(x){ if(!dragging) return; const dx=x-lastX; target -= dx*0.02; moved+=Math.abs(dx); lastX=x; }
+function down(x){ if(lbOpen) return; dragging=true; lastX=x; moved=0; markInput(); document.body.classList.add('dragging'); }
+function move(x){ if(!dragging) return; const dx=x-lastX; target -= dx*0.02; moved+=Math.abs(dx); lastX=x; markInput(); }
 function up(x,e){
   if(!dragging) return;
   dragging=false; document.body.classList.remove('dragging');
@@ -534,6 +556,13 @@ let started=false;
 function tick(){
   requestAnimationFrame(tick);
 
+  // idle auto-rotate — pauses while the mouse is on a frame, while dragging, while the
+  // lightbox is open, or for a moment after any scroll/drag (so the viewer keeps control)
+  if(autoEnabled && started && !dragging && !lbOpen && !hovered
+     && (performance.now()-lastInput > IDLE_MS)){
+    target += AUTO_SPEED;
+  }
+
   // smooth scroll + velocity
   current += (target-current)*0.08;
   velo += ((current-prev)-velo)*0.12;
@@ -542,7 +571,7 @@ function tick(){
 
   morph += (morphTarget-morph)*0.07;
 
-  layout(current);
+  layout(current + introState.off);   // introState.off eases from -7 → 0 on load (lines up)
 
   // hover detection
   if(started){
@@ -556,7 +585,7 @@ function tick(){
         capEl.textContent=hovered.userData.title;
         idxEl.textContent=String(hovered.userData.i+1).padStart(2,'0');
       } else {
-        capEl.textContent = morphTarget>0.5 ? 'Reel · unravel' : 'Drag · Scroll';
+        capEl.textContent = idleCaption();
       }
     }
   }
@@ -592,10 +621,20 @@ const mg=document.getElementById('m-gallery'), ms=document.getElementById('m-spi
 function setMode(spiral){
   morphTarget=spiral?1:0;
   mg.classList.toggle('on',!spiral); ms.classList.toggle('on',spiral);
-  capEl.textContent = spiral?'Reel · unravel':'Drag · Scroll';
+  if(!hovered) capEl.textContent = idleCaption();
 }
 mg.onclick=()=>setMode(false);
 ms.onclick=()=>setMode(true);
+
+// Autoplay on/off — lets the viewer stop the automatic rotation entirely.
+const autoBtn=document.getElementById('autoBtn');
+autoBtn.onclick=()=>{
+  autoEnabled=!autoEnabled;
+  autoBtn.classList.toggle('on',autoEnabled);
+  autoBtn.setAttribute('aria-pressed', String(autoEnabled));
+  markInput();                               // stop any in-flight drift immediately
+  if(!hovered) capEl.textContent = idleCaption();
+};
 
 /* ============================================================
    intro (GSAP) — branded loader, then reveal
@@ -622,6 +661,12 @@ function forceReady(){
     s.style.transition='transform .9s cubic-bezier(.16,1,.3,1)';
     s.style.transform='translateY(0)';
   });
+  // the reel spins into alignment, then the idle auto-rotate takes over.
+  // only when visible (GSAP is rAF-driven); if throttled it just starts already lined up.
+  if(!document.hidden){
+    introState.off=-7;
+    gsap.to(introState,{off:0,duration:1.8,ease:'power3.out'});
+  }
 }
 
 // Pretty path (runs when the tab is visible): animate the branded loader, then reveal.
@@ -643,6 +688,10 @@ addEventListener('resize', ()=>{
   renderer.setSize(innerWidth,innerHeight);
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
 });
+
+/* read-only state probe (harmless; handy for debugging) */
+window.__wg = ()=>({current:+current.toFixed(3), target:+target.toFixed(3), morph:+morph.toFixed(2),
+  autoEnabled, hovered:!!hovered, off:+introState.off.toFixed(2)});
 </script>
 </body>
 </html>

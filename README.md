@@ -7,7 +7,19 @@ toggled top-right:
 - **Reel** — the frames unspool into a **vertical film strip that swirls up a coiled axis**
   as you scroll (the "let a film reel unravel, vertically" effect).
 
-Both: black-and-white → colour on hover, custom cursor, velocity warp, 16:9 film frames.
+Both: black-and-white → colour on hover, custom cursor, velocity warp, 16:9 film frames, and
+**click any frame to enlarge** (full-size lightbox; Esc / × / backdrop closes).
+
+**Reel is the default opening view** — it spins into alignment, then **slowly auto-rotates
+through all the frames on its own**. The auto-rotation pauses the moment the mouse is on a frame
+(or you scroll/drag) so the viewer takes control, and resumes shortly after they stop. An
+**Autoplay** button (top-right, under the mode switch) turns the automatic motion off entirely.
+Tune in the module: `AUTO_SPEED` (rotation speed), `IDLE_MS` (resume delay).
+
+**🟢 Live:** https://vfxmagic.github.io/warp-gallery/ — deployed as a standalone product (GitHub
+Pages, repo `vfxmagic/warp-gallery`), separate from the main vfxmagic.com.au site. Linked as a
+"Live product" card on the marketing Client Area. To redeploy after edits: copy this folder to a
+clean dir and `git push` to `vfxmagic/warp-gallery` (main / root).
 
 This is **Example 4** from Sergei Chyrkov's *"Fable 5 Is Insane…"* build
 (`https://www.youtube.com/watch?v=BWQ542fvrXo`) — "the reel, made physical." It's the one
